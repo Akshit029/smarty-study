@@ -23,6 +23,11 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
+# Database files
+data/db/
+data/*.db
+*.sqlite
+
 # IDE / System
 .vscode/
 .idea/
