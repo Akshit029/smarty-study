@@ -7,7 +7,8 @@ const getPrediction = async (req, res) => {
     try {
         const { time_of_day, duration_minutes, mood, distraction_level } = req.body;
         
-        const response = await axios.post('http://127.0.0.1:5001/predict', {
+        const mlUrl = process.env.ML_SERVICE_URL || 'http://127.0.0.1:5001';
+        const response = await axios.post(`${mlUrl}/predict`, {
             time_of_day,
             duration_minutes,
             mood,

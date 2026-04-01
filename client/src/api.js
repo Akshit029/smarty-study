@@ -1,7 +1,7 @@
 import axios from 'axios';
 
 const api = axios.create({
-  baseURL: 'http://localhost:5005/api', // Point to Node.js backend
+  baseURL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:5005/api', 
 });
 
 // Interceptor to add JWT token from localStorage to headers automatically
