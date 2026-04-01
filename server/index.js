@@ -13,6 +13,7 @@ const app = express();
 const allowedOrigins = [
     'http://localhost:5173',
     'http://127.0.0.1:5173',
+    'https://smarty-study.vercel.app',
     process.env.FRONTEND_URL
 ].filter(Boolean);
 
@@ -20,11 +21,14 @@ app.use(cors({
     origin: (origin, callback) => {
         // Allow requests with no origin (like mobile apps or curl)
         if (!origin) return callback(null, true);
-        if (allowedOrigins.indexOf(origin) === -1) {
-            const msg = 'The CORS policy for this site does not allow access from the specified Origin.';
-            return callback(new Error(msg), false);
+        
+        // Basic check for allowed origins
+        if (allowedOrigins.includes(origin)) {
+            return callback(null, true);
+        } else {
+            console.warn(`Blocked by CORS: Origin ${origin} not in allowed list:`, allowedOrigins);
+            return callback(null, false); // Returning false instead of an Error avoids 500 status
         }
-        return callback(null, true);
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS']
