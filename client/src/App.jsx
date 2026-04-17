@@ -1,11 +1,24 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link } from 'react-router-dom';
-import { BookOpen, Calendar, LogIn } from 'lucide-react';
+import { BookOpen, Calendar, LogIn, Sun, Moon } from 'lucide-react';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import Signup from './pages/Signup';
 
 function App() {
+  const [theme, setTheme] = useState(() => {
+    return localStorage.getItem('theme') || 'light';
+  });
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+    localStorage.setItem('theme', theme);
+  }, [theme]);
+
+  const toggleTheme = () => {
+    setTheme(prev => prev === 'light' ? 'dark' : 'light');
+  };
+
   const handleLogout = () => {
     localStorage.removeItem('token');
     window.location.href = '/login';
@@ -17,6 +30,9 @@ function App() {
         <nav className="nav">
           <Link to="/" className="nav-brand">Smart Study</Link>
           <div className="nav-links">
+            <button className="btn btn-secondary" onClick={toggleTheme} aria-label="Toggle Theme" style={{ padding: '0.5rem' }}>
+              {theme === 'light' ? <Moon size={18} /> : <Sun size={18} />}
+            </button>
             <Link to="/dashboard" className="btn btn-secondary">
               <Calendar size={18} /> <span>Dashboard</span>
             </Link>

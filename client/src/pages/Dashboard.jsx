@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { BarChart2, Calendar, Clock, Plus, Activity, Layers, Target } from 'lucide-react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { BarChart2, Calendar, Clock, Plus, Activity, Layers, Target, Bell, Settings } from 'lucide-react';
 import api from '../api';
 import AnalyticsChart from '../components/AnalyticsChart';
 import TimetableGrid from '../components/TimetableGrid';
@@ -18,6 +18,12 @@ const Dashboard = () => {
   const [newTaskDuration, setNewTaskDuration] = useState(60);
   const [tasksToSchedule, setTasksToSchedule] = useState([]);
   const [dailyPredictionScore, setDailyPredictionScore] = useState(null);
+
+  // Advanced Features State
+  const [timerMode, setTimerMode] = useState('stopwatch'); 
+  const [pomodoroMinutes, setPomodoroMinutes] = useState(25);
+  const [dailyGoal, setDailyGoal] = useState(4);
+  const notifiedTasks = useRef(new Set());
 
   useEffect(() => {
     if(!localStorage.getItem('token')) {
@@ -56,29 +62,60 @@ const Dashboard = () => {
     } catch (err) { console.error('Failed to predict', err); }
   }
 
+  // Request Notification Permission on mount
+  useEffect(() => {
+    if ('Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission();
+    }
+  }, []);
+
   useEffect(() => {
     let interval = null;
     if (isTimerActive) {
       interval = setInterval(() => {
-        setTimerSeconds(s => s + 1);
+        if (timerMode === 'pomodoro') {
+           setTimerSeconds(s => {
+             if (s <= 1) {
+                setIsTimerActive(false);
+                if (Notification.permission === 'granted') {
+                   new Notification('Pomodoro Complete!', { body: 'Take a break.' });
+                }
+                return 0;
+             }
+             return s - 1;
+           });
+        } else {
+           setTimerSeconds(s => s + 1);
+        }
       }, 1000);
     } else if (!isTimerActive && timerSeconds !== 0) {
       clearInterval(interval);
     }
     return () => clearInterval(interval);
-  }, [isTimerActive, timerSeconds]);
+  }, [isTimerActive, timerSeconds, timerMode]);
 
-  const toggleTimer = () => setIsTimerActive(!isTimerActive);
+  const toggleTimer = () => {
+    if (!isTimerActive && timerSeconds === 0 && timerMode === 'pomodoro') {
+      setTimerSeconds(pomodoroMinutes * 60);
+    }
+    setIsTimerActive(!isTimerActive);
+  };
 
   const saveSessionLog = async () => {
     setIsTimerActive(false);
+    
+    let actualElapsedSeconds = timerSeconds;
+    if (timerMode === 'pomodoro') {
+       actualElapsedSeconds = (pomodoroMinutes * 60) - timerSeconds;
+    }
+
     try {
-      if(timerSeconds < 60) return alert('Session must be at least 1 minute!');
+      if(actualElapsedSeconds < 60) return alert('Session must be at least 1 minute!');
       await api.post('/logs', {
         subject: currentSubject || 'General Study',
-        startTime: new Date(Date.now() - timerSeconds * 1000),
+        startTime: new Date(Date.now() - actualElapsedSeconds * 1000),
         endTime: new Date(),
-        durationMinutes: Math.ceil(timerSeconds / 60),
+        durationMinutes: Math.ceil(actualElapsedSeconds / 60),
         mood: 8, 
         distractionLevel: 3,
         energyLevel: 7
@@ -115,9 +152,17 @@ const Dashboard = () => {
 
   // Dynamic Aggregation Hooks for the new top-level UI row
   const totalLogs = logs.length;
+  const todayHours = useMemo(() => {
+    const today = new Date().toDateString();
+    return logs
+      .filter(log => new Date(log.startTime).toDateString() === today)
+      .reduce((acc, log) => acc + (log.durationMinutes || 0), 0) / 60;
+  }, [logs]);
+
   const totalHours = useMemo(() => {
     return logs.reduce((acc, log) => acc + (log.durationMinutes || 0), 0) / 60;
   }, [logs]);
+
   const avgFocus = useMemo(() => {
      if(logs.length === 0) return 0;
      const total = logs.reduce((acc, log) => acc + (log.energyLevel || 0), 0);
@@ -132,8 +177,31 @@ const Dashboard = () => {
   const activeTimetableTasks = timetables.length > 0 ? timetables[0].tasks.map(t => ({
     id: t._id || Math.random().toString(),
     content: `${t.title} (${t.durationMinutes}m)`,
-    type: t.type
+    type: t.type,
+    startTime: t.startTime,
+    endTime: t.endTime
   })) : [];
+
+  // Background Reminder Loop
+  useEffect(() => {
+    const reminderInterval = setInterval(() => {
+       if (Notification.permission === 'granted') {
+          const now = new Date();
+          activeTimetableTasks.forEach(task => {
+             if (!task.startTime) return;
+             const taskTime = new Date(task.startTime);
+             const diffMs = taskTime.getTime() - now.getTime();
+             if (diffMs > 0 && diffMs <= 2 * 60 * 1000) { // starting in <= 2 mins
+                if (!notifiedTasks.current.has(task.id)) {
+                   new Notification('Reminder: Upcoming Task', { body: `${task.content} begins in 2 minutes!` });
+                   notifiedTasks.current.add(task.id);
+                }
+             }
+          });
+       }
+    }, 30000);
+    return () => clearInterval(reminderInterval);
+  }, [activeTimetableTasks]);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
@@ -142,8 +210,11 @@ const Dashboard = () => {
       <div className="grid grid-3-col">
          <div className="card" style={{display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '1.5rem'}}>
             <Clock size={24} color="var(--text-secondary)" style={{marginBottom: '0.5rem'}} />
-            <div style={{fontSize: 'clamp(1.5rem, 4vw, 2.5rem)', fontWeight: 'bold'}}>{totalHours.toFixed(1)} <span style={{fontSize: '1rem', color: 'var(--text-secondary)'}}>hrs</span></div>
-            <h4 style={{color: 'var(--text-secondary)', textTransform: 'uppercase', fontSize: '0.7rem', letterSpacing: '1px', marginTop: '0.25rem', textAlign: 'center'}}>Total Time Logged</h4>
+            <div style={{fontSize: 'clamp(1.5rem, 4vw, 2.5rem)', fontWeight: 'bold'}}>{todayHours.toFixed(1)} <span style={{fontSize: '1rem', color: 'var(--text-secondary)'}}>hrs</span></div>
+            <div style={{ width: '100%', height: '6px', background: 'var(--bg-primary)', borderRadius: '3px', marginTop: '0.5rem', overflow: 'hidden' }}>
+                <div style={{ width: `${Math.min((todayHours / dailyGoal) * 100, 100)}%`, height: '100%', background: 'var(--success)' }}></div>
+            </div>
+            <h4 style={{color: 'var(--text-secondary)', textTransform: 'uppercase', fontSize: '0.7rem', letterSpacing: '1px', marginTop: '0.5rem', textAlign: 'center'}}>Today's Goal: {dailyGoal} hrs</h4>
          </div>
          <div className="card" style={{display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '1.5rem'}}>
             <Layers size={24} color="var(--text-secondary)" style={{marginBottom: '0.5rem'}} />
@@ -172,7 +243,20 @@ const Dashboard = () => {
         <div className="card">
           <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
              <h3>Active Session Timer</h3>
-             <Clock size={18} color="var(--accent-hover)" />
+             <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center'}}>
+               <button 
+                 className={`btn ${timerMode === 'stopwatch' ? 'btn-primary' : 'btn-secondary'}`} 
+                 style={{ padding: '0.25rem 0.5rem', fontSize: '0.7rem'}} 
+                 onClick={() => { setTimerMode('stopwatch'); setTimerSeconds(0); setIsTimerActive(false); }}>
+                 Stopwatch
+               </button>
+               <button 
+                 className={`btn ${timerMode === 'pomodoro' ? 'btn-primary' : 'btn-secondary'}`} 
+                 style={{ padding: '0.25rem 0.5rem', fontSize: '0.7rem'}} 
+                 onClick={() => { setTimerMode('pomodoro'); setTimerSeconds(pomodoroMinutes * 60); setIsTimerActive(false); }}>
+                 Pomodoro
+               </button>
+             </div>
           </div>
           <input 
             className="input" 

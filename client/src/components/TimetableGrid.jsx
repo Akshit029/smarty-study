@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
+import { Bell, BellRing, Clock } from 'lucide-react';
 
 const TimetableGrid = ({ initialData }) => {
   const [tasks, setTasks] = useState([]);
+  const [activeAlarms, setActiveAlarms] = useState(new Set());
 
   useEffect(() => {
     if (initialData && initialData.length > 0) {
@@ -11,6 +13,26 @@ const TimetableGrid = ({ initialData }) => {
         setTasks([{ id: 'mock-1', content: 'No Active Schedule (Use Generator)', type: 'break' }]);
     }
   }, [initialData]);
+
+  const toggleAlarm = (taskId, taskContent) => {
+     setActiveAlarms(prev => {
+        const newSet = new Set(prev);
+        if (newSet.has(taskId)) {
+           newSet.delete(taskId);
+        } else {
+           newSet.add(taskId);
+           if (Notification.permission === 'granted') {
+              new Notification('Alarm Set', { body: `Custom reminder set for ${taskContent}` });
+           }
+        }
+        return newSet;
+     });
+  };
+
+  const formatTime = (isoString) => {
+     if (!isoString) return '';
+     return new Date(isoString).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  };
 
   const onDragEnd = (result) => {
     if (!result.destination) return;
@@ -42,15 +64,34 @@ const TimetableGrid = ({ initialData }) => {
                       padding: '1rem 1.5rem',
                       margin: '0 0 12px 0',
                       borderRadius: '0.75rem',
-                      backgroundColor: snapshot.isDragging ? 'var(--accent-hover)' : 'var(--bg-secondary)',
-                      color: 'white',
+                      backgroundColor: snapshot.isDragging ? 'var(--bg-primary)' : 'var(--bg-secondary)',
+                      color: 'var(--text-primary)',
                       borderLeft: `4px solid ${task.type === 'break' ? 'var(--warning)' : 'var(--accent-color)'}`,
-                      boxShadow: snapshot.isDragging ? '0 10px 15px -3px rgba(0, 0, 0, 0.3)' : '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+                      boxShadow: snapshot.isDragging ? 'var(--shadow-md)' : 'var(--shadow-sm)',
                       transition: 'background-color 0.2s',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '0.5rem',
                       ...provided.draggableProps.style,
                     }}
                   >
-                    {task.content}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                       <span style={{ fontWeight: '600' }}>{task.content}</span>
+                       <button 
+                         onClick={() => toggleAlarm(task.id, task.content)}
+                         style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: activeAlarms.has(task.id) ? 'var(--accent-color)' : 'var(--text-secondary)' }}
+                         title="Toggle Manual Reminder"
+                         aria-label="Toggle Reminder"
+                       >
+                          {activeAlarms.has(task.id) ? <BellRing size={16} /> : <Bell size={16} />}
+                       </button>
+                    </div>
+                    {task.startTime && task.endTime && (
+                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                           <Clock size={14} />
+                           {formatTime(task.startTime)} - {formatTime(task.endTime)}
+                       </div>
+                    )}
                   </div>
                 )}
               </Draggable>
